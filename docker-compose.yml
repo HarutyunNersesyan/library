@@ -1,0 +1,85 @@
+services:
+  book-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: books_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: admin
+    ports:
+      - "5433:5432"
+    volumes:
+      - book_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d books_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  borrow-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: borrow_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: admin
+    ports:
+      - "5434:5432"
+    volumes:
+      - borrow_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d borrow_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  book-service:
+    build: ./book-service
+    environment:
+      DB_URL: jdbc:postgresql://book-db:5432/books_db
+      DB_USERNAME: postgres
+      DB_PASSWORD: admin
+    ports:
+      - "8081:8081"
+    depends_on:
+      book-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8081/actuator/health"]
+      interval: 7s
+      timeout: 4s
+      retries: 20
+      start_period: 15s
+
+  borrow-service:
+    build: ./borrow-service
+    environment:
+      DB_URL: jdbc:postgresql://borrow-db:5432/borrow_db
+      DB_USERNAME: postgres
+      DB_PASSWORD: admin
+      BOOK_SERVICE_URL: http://book-service:8081
+    ports:
+      - "8082:8082"
+    depends_on:
+      borrow-db:
+        condition: service_healthy
+      book-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8082/actuator/health"]
+      interval: 7s
+      timeout: 4s
+      retries: 20
+      start_period: 15s
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      book-service:
+        condition: service_healthy
+      borrow-service:
+        condition: service_healthy
+
+volumes:
+  book_data:
+  borrow_data:
